@@ -7,6 +7,7 @@ namespace Test_Taste_Console_Application.Utilities
 {
     public static class ConsoleWriter
     {
+
         public static void CreateLine(int[] columnSizes)
         {
             /*
