@@ -12,5 +12,7 @@
                                                "?data=id,mass,massValue,massExponent,massValue&filter[]=aroundPlanet,gt,null";
 
         public const string GetMoonByIdQueryParameters = BodiesUri + "/";
+
+        public const string PagingQueryParameters = "&order=id,asc&page={0},{1}";
     }
 }

@@ -12,12 +12,17 @@
     </ItemGroup>
     <ItemGroup>
       <PackageReference Include="log4net" Version="3.6.0" />
-      <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0" />
-      <PackageReference Include="Microsoft.Extensions.Http" Version="11.0.0" />
+      <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.0" />
+      <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.0" />
+      <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+      <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
       <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 <None Update="log4net.config">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+      <None Update="appsettings.json" Condition="Exists('appsettings.json')">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 
     <ItemGroup>

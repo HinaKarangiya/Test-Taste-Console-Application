@@ -7,6 +7,7 @@ namespace Test_Taste_Console_Application.Utilities
 {
     public static class ConsoleWriter
     {
+
         public static void CreateLine(int[] columnSizes)
         {
             /*
@@ -66,6 +67,12 @@ namespace Test_Taste_Console_Application.Utilities
             CreateLine(columnSizes);
             CreateText(columnLabels, columnSizes);
             CreateLine(columnSizes);
+        }
+
+        public static void WriteStatus(string status)
+        {
+            //Keeps the user informed about the step the application is in, e.g. "Loading data...".
+            Console.WriteLine(status);
         }
 
         public static void CreateEmptyLines(int totalEmptyLines)
