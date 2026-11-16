@@ -6,5 +6,8 @@
 
         public const string ScreenOutputOperationFailed =
             "The screen output operation failed with the following error: ";
+
+        public const string ApiKeyMissing =
+            "No API key is configured. Set 'Api:Key' in appsettings.json.";
     }
 }

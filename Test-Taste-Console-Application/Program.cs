@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using log4net;
 using log4net.Config;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Test_Taste_Console_Application.Constants;
 using Test_Taste_Console_Application.Domain.Services;
@@ -27,11 +28,11 @@ namespace Test_Taste_Console_Application
         {
             var serviceProvider = serviceCollection.BuildServiceProvider();
 
-            //The service provider gets the services.
-            var screenOutputService = serviceProvider.GetService<IOutputService>();
-
             try
             {
+                //The service provider gets the services.
+                var screenOutputService = serviceProvider.GetService<IOutputService>();
+
                 screenOutputService.OutputAllPlanetsAndTheirAverageMoonGravityToConsole();
                 screenOutputService.OutputAllMoonsAndTheirMassToConsole();
                 screenOutputService.OutputAllPlanetsAndTheirMoonsToConsole();
@@ -52,6 +53,15 @@ namespace Test_Taste_Console_Application
             //The function configures all the services.
             XmlConfigurator.Configure(LogManager.GetRepository(Assembly.GetEntryAssembly()),
                 new FileInfo(ConfigurationFileName.Logger));
+
+            //The settings (including the API key) come from appsettings.json & An environment variable (e.g. Api__Key) overrides the file.
+            IConfiguration configuration = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile(ConfigurationFileName.AppSettings, optional: true)
+                .AddEnvironmentVariables()
+                .Build();
+            serviceCollection.AddSingleton(configuration);
+
             serviceCollection.AddHttpClient<HttpClientService>();
             serviceCollection.AddSingleton<IPlanetService, PlanetService>();
             serviceCollection.AddSingleton<IOutputService, ScreenOutputService>();
