@@ -69,6 +69,12 @@ namespace Test_Taste_Console_Application.Utilities
             CreateLine(columnSizes);
         }
 
+        public static void WriteStatus(string status)
+        {
+            //Keeps the user informed about the step the application is in, e.g. "Loading data...".
+            Console.WriteLine(status);
+        }
+
         public static void CreateEmptyLines(int totalEmptyLines)
         {
             //The function can create empty spaces.

@@ -9,11 +9,11 @@ namespace Test_Taste_Console_Application.Domain.Services
     ///<summary>
     /// A service to create the HttpClient.
     ///</summary>
-    public class HttpClientService
+    public class BaseHttpClient
     {
         public HttpClient Client { get; }
 
-        public HttpClientService(HttpClient client, IConfiguration configuration)
+        public BaseHttpClient(HttpClient client, IConfiguration configuration)
         {
             //The API key is read from the configuration (appsettings.json).
             var apiKey = configuration[HttpClientSettings.ApiKeyConfigurationKey];

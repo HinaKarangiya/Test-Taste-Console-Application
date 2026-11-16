@@ -1,11 +1,11 @@
-﻿using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Globalization;
-using System.Text;
-using Newtonsoft.Json;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Threading.Tasks;
 using Test_Taste_Console_Application.Constants;
 using Test_Taste_Console_Application.Domain.DataTransferObjects;
-using Test_Taste_Console_Application.Domain.DataTransferObjects.JsonObjects;
 using Test_Taste_Console_Application.Domain.Objects;
 using Test_Taste_Console_Application.Domain.Services.Interfaces;
 using Test_Taste_Console_Application.Utilities;
@@ -15,77 +15,110 @@ namespace Test_Taste_Console_Application.Domain.Services
     /// <inheritdoc />
     public class PlanetService : IPlanetService
     {
-        private readonly HttpClientService _httpClientService;
+        private readonly ISolarSystemService _solarSystemService;
 
-        public PlanetService(HttpClientService httpClientService)
+        //The planets are needed by more than one output, so they are only loaded once.
+        private Task<IReadOnlyList<Planet>> _planets;
+
+        public PlanetService(ISolarSystemService solarSystemService)
         {
-            _httpClientService = httpClientService;
+            _solarSystemService = solarSystemService;
         }
 
-        public IEnumerable<Planet> GetAllPlanets()
+        public async Task<IReadOnlyList<Planet>> GetAllPlanetsAsync()
         {
-            var allPlanetsWithTheirMoons = new Collection<Planet>();
-
-            var response = _httpClientService.Client
-                .GetAsync(UriPath.GetAllPlanetsWithMoonsQueryParameters)
-                .Result;
-
-            //If the status code isn't 200-299, then the function returns an empty collection.
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                Logger.Instance.Warn($"{LoggerMessage.GetRequestFailed}{response.StatusCode}");
-                return allPlanetsWithTheirMoons;
+                return await (_planets ??= LoadPlanetsAsync());
             }
-
-            var content = response.Content.ReadAsStringAsync().Result;
-
-            //The JSON converter uses DTO's, that can be found in the DataTransferObjects folder, to deserialize the response content.
-            var results = JsonConvert.DeserializeObject<JsonResult<PlanetDto>>(content);
-
-            //The JSON converter can return a null object. 
-            if (results == null) return allPlanetsWithTheirMoons;
-
-            //If the planet doesn't have any moons, then it isn't added to the collection.
-            foreach (var planet in results.Bodies)
+            catch
             {
-                if(planet.Moons != null)
-                {
-                    var newMoonsCollection = new Collection<MoonDto>();
-                    foreach (var moon in planet.Moons)
-                    {
-                        var moonResponse = _httpClientService.Client
-                            .GetAsync(UriPath.GetMoonByIdQueryParameters + moon.URLId)
-                            .Result;
-                        var moonContent = moonResponse.Content.ReadAsStringAsync().Result;
-                        newMoonsCollection.Add(JsonConvert.DeserializeObject<MoonDto>(moonContent));
-                    }
-                    planet.Moons = newMoonsCollection;
-
-                }
-                allPlanetsWithTheirMoons.Add(new Planet(planet));
+                //A failed load isn't kept, so that the next caller can try again.
+                _planets = null;
+                throw;
             }
-
-            return allPlanetsWithTheirMoons;
         }
 
-        private static string RemoveDiacritics(string text)
+        private async Task<IReadOnlyList<Planet>> LoadPlanetsAsync()
         {
-            var normalizedString = text.Normalize(NormalizationForm.FormD);
-            var stringBuilder = new StringBuilder(capacity: normalizedString.Length);
+            //Load all planets
+            var planetDtos = await _solarSystemService.GetPlanetsAsync();
 
-            for (int i = 0; i < normalizedString.Length; i++)
+            var moonIds = planetDtos
+                        .SelectMany(planetDto => planetDto.Moons ?? Enumerable.Empty<MoonDto>())
+                        .Select(moonReference => moonReference.URLId)
+                        .Where(moonId => !string.IsNullOrEmpty(moonId))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+
+            //Load all all moons details
+            var moonDetailsById = await LoadMoonDetailsAsync(moonIds);
+
+            //Prepare & return planets
+            var allPlanets = new List<Planet>();
+            foreach (var planetDto in planetDtos)
             {
-                char c = normalizedString[i];
-                var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
-                if (unicodeCategory != UnicodeCategory.NonSpacingMark)
+                var moonsOfPlanet = new List<MoonDto>();
+                foreach (var moonReference in planetDto.Moons ?? Enumerable.Empty<MoonDto>())
                 {
-                    stringBuilder.Append(c);
+                    var moonId = moonReference.URLId;
+                    moonsOfPlanet.Add(moonId != null && moonDetailsById.TryGetValue(moonId, out var moonDetails)
+                                        ? moonDetails
+                                        : moonReference);
+                }
+
+                allPlanets.Add(new Planet(new PlanetDto
+                {
+                    Id = planetDto.Id,
+                    SemiMajorAxis = planetDto.SemiMajorAxis,
+                    Moons = moonsOfPlanet
+                }));
+            }
+
+            return allPlanets;
+        }
+
+        /// Loads the details of all the moons with GET /bodies/{id}. A few requests run at the same time.
+        private async Task<Dictionary<string, MoonDto>> LoadMoonDetailsAsync(string[] moonIds)
+        {
+            var moonDetailsById = new Dictionary<string, MoonDto>(StringComparer.OrdinalIgnoreCase);
+            if (moonIds.Length == 0) return moonDetailsById;
+
+            Logger.Instance.Info(string.Format(LoggerMessage.MoonDetailsLoading, moonIds.Length));
+
+            //The moons are requested in groups. A group is finished before the next one starts, so a failure never leaves requests running in the background.
+            foreach (var group in moonIds.Chunk(HttpClientSettings.MaxParallelRequests))
+            {
+                var moonDetails = await Task.WhenAll(group.Select(LoadMoonDetailsOrNullAsync));
+                for (var i = 0; i < group.Length; i++)
+                {
+                    if (moonDetails[i] != null) moonDetailsById[group[i]] = moonDetails[i];
                 }
             }
 
-            return stringBuilder
-                .ToString()
-                .Normalize(NormalizationForm.FormC);
+            Logger.Instance.Info(string.Format(LoggerMessage.MoonDetailsLoaded, moonDetailsById.Count));
+            return moonDetailsById;
+        }
+
+        /// Loads the details of one moon. A moon that can't be found (or has an invalid response) doesn't stop the whole output:
+        private async Task<MoonDto> LoadMoonDetailsOrNullAsync(string moonId)
+        {
+            try
+            {
+                return await _solarSystemService.GetMoonByIdAsync(moonId);
+            }
+            catch (HttpRequestException exception) when (!IsProblemForEveryRequest(exception))
+            {
+                Logger.Instance.Warn($"{string.Format(LoggerMessage.MoonDetailsMissing, moonId)} {exception.Message}");
+                return null;
+            }
+        }
+
+        private static bool IsProblemForEveryRequest(HttpRequestException exception)
+        {
+            return exception.StatusCode == HttpStatusCode.Unauthorized
+                   || exception.StatusCode == HttpStatusCode.Forbidden
+                   || exception.StatusCode == (HttpStatusCode)429;
         }
     }
 }
